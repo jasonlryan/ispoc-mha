@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { MessageSquare, Send, Home, Phone, Calendar, Users, HelpCircle, Search, MapPin, Building2, Heart, Settings, Menu, X, ChevronUp, KeyRound, Train, CalendarDays, FileQuestion, ClipboardList, Loader2 } from 'lucide-react';
+import { MessageSquare, Send, Home, Phone, Calendar, Users, HelpCircle, Search, MapPin, Building2, Heart, Settings, Menu, X, ChevronUp, KeyRound, Train, FileQuestion, ClipboardList, Loader2 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";

@@ -43,7 +43,6 @@ export async function* streamMessage(message: string) {
     let status = await openai.beta.threads.runs.retrieve(thread.id, run.id);
     
     while (status.status !== 'completed' && status.status !== 'failed') {
-      // Reduce polling interval to 200ms
       await new Promise(resolve => setTimeout(resolve, 200));
       status = await openai.beta.threads.runs.retrieve(thread.id, run.id);
       
@@ -56,12 +55,18 @@ export async function* streamMessage(message: string) {
     const messages = await openai.beta.threads.messages.list(thread.id);
     const assistantMessage = messages.data.find(msg => msg.role === 'assistant');
 
-    if (!assistantMessage || !assistantMessage.content[0]?.text?.value) {
+    if (!assistantMessage || !assistantMessage.content[0]) {
       throw new Error('No response received from assistant');
     }
 
+    // Safely handle different content types
+    const content = assistantMessage.content[0];
+    if (content.type !== 'text') {
+      throw new Error('Unexpected response format from assistant');
+    }
+
     // Stream the response in larger chunks for better performance
-    const response = assistantMessage.content[0].text.value;
+    const response = content.text.value;
     const chunkSize = 25; // Stream 25 characters at a time
     let streamedResponse = '';
     
