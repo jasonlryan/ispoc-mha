@@ -2,7 +2,7 @@
 export const config = {
   openai: {
     apiKey: import.meta.env.VITE_OPENAI_API_KEY,
-    assistantId: import.meta.env.VITE_OPENAI_ASSISTANT_ID
+    assistantId: import.meta.env.VITE_OPENAI_ASSISTANT_ID || 'asst_abc123' // Replace with your actual assistant ID
   }
 };
 

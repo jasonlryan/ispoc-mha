@@ -6,8 +6,10 @@ export async function sendMessage(message: string, onUpdate: (content: string) =
     let hasReceivedResponse = false;
     
     for await (const chunk of messageStream) {
-      hasReceivedResponse = true;
-      onUpdate(chunk);
+      if (chunk) {
+        hasReceivedResponse = true;
+        onUpdate(chunk);
+      }
     }
 
     if (!hasReceivedResponse) {

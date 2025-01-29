@@ -1,48 +1,86 @@
-import { useState, useEffect } from 'react';
-import { MessageSquare, Send, Home, Phone, Calendar, Users, HelpCircle, Search, MapPin, Building2, Heart, Settings, Menu, X, ChevronUp, KeyRound, Train, CalendarDays, FileQuestion, ClipboardList } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { MessageSquare, Send, Home, Phone, Calendar, Users, HelpCircle, Search, MapPin, Building2, Heart, Settings, Menu, X, ChevronUp, KeyRound, Train, CalendarDays, FileQuestion, ClipboardList, Loader2 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { sendMessage } from '@/lib/chat';
-import { config, debugConfig } from '@/lib/config';
 
 function App() {
-  const [messages, setMessages] = useState<Array<{type: 'user' | 'ai' | 'system', content: string}>>([]);
+  const [messages, setMessages] = useState<Array<{type: 'user' | 'ai', content: string}>>([
+    {type: 'ai', content: 'Hello! I\'m your MHA Digital Assistant. How can I help you today?'}
+  ]);
   const [input, setInput] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
   const [helpPanelOpen, setHelpPanelOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [apiConfigured, setApiConfigured] = useState(false);
-  const [currentResponse, setCurrentResponse] = useState('');
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
 
   useEffect(() => {
-    const isConfigValid = config.openai.apiKey?.startsWith('sk-') && Boolean(config.openai.assistantId);
-    setApiConfigured(isConfigValid);
-    debugConfig();
-    
-    setMessages([{
-      type: 'system',
-      content: isConfigValid 
-        ? 'Hello! I\'m your MHA Digital Assistant. How can I help you today?'
-        : 'Demo Mode: The AI assistant is not configured. The interface is functional but responses are simulated. To enable AI features, please configure your OpenAI API key and Assistant ID.'
-    }]);
-  }, []);
+    scrollToBottom();
+  }, [messages]);
 
-  const handleMessageUpdate = (content: string) => {
-    setCurrentResponse(content);
-    setMessages(prev => {
-      const newMessages = [...prev];
-      const lastMessage = newMessages[newMessages.length - 1];
+  // Function to format message content with proper line breaks
+  const formatMessageContent = (content: string) => {
+    return content.split('\n').map((line, i) => (
+      <span key={i}>
+        {line}
+        {i < content.split('\n').length - 1 && <br />}
+      </span>
+    ));
+  };
+
+  const handleSend = async (messageText: string = input.trim()) => {
+    if (messageText && !isLoading) {
+      setIsLoading(true);
       
-      if (lastMessage && lastMessage.type === 'ai') {
-        lastMessage.content = content;
-      } else {
-        newMessages.push({ type: 'ai', content });
+      // Add user message to chat
+      setMessages(prev => [...prev, { type: 'user', content: messageText }]);
+      
+      // Clear input if it's from the input field
+      if (messageText === input) {
+        setInput('');
       }
       
-      return newMessages;
-    });
+      try {
+        // Add initial AI message
+        setMessages(prev => [...prev, { type: 'ai', content: '' }]);
+        
+        // Stream the response
+        await sendMessage(messageText, (content) => {
+          setMessages(prev => {
+            const newMessages = [...prev];
+            // Update the last AI message with the new content
+            if (newMessages[newMessages.length - 1].type === 'ai') {
+              newMessages[newMessages.length - 1].content = content;
+            }
+            return newMessages;
+          });
+        });
+      } catch (error) {
+        setMessages(prev => {
+          const newMessages = [...prev];
+          if (newMessages[newMessages.length - 1].type === 'ai') {
+            newMessages[newMessages.length - 1].content = 
+              'I apologize, but I encountered an error processing your request. Please try again.';
+          }
+          return newMessages;
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    }
+  };
+
+  const handleCommonQuestionClick = (questionText: string) => {
+    if (!isLoading) {
+      handleSend(questionText);
+      setHelpPanelOpen(false); // Close mobile help panel if open
+    }
   };
 
   const commonQuestions = [
@@ -63,30 +101,6 @@ function App() {
       text: "Where can I find the latest HR policies?"
     }
   ];
-
-  const handleSend = async () => {
-    if (input.trim() && !isLoading) {
-      const userMessage = input.trim();
-      setInput('');
-      setIsLoading(true);
-      setCurrentResponse('');
-      setMessages(prev => [...prev, {type: 'user', content: userMessage}]);
-
-      try {
-        if (apiConfigured) {
-          await sendMessage(userMessage, handleMessageUpdate);
-        } else {
-          // Demo mode response
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          handleMessageUpdate('This is a demo response. To enable real AI responses, please configure your OpenAI API key and Assistant ID.');
-        }
-      } catch (error) {
-        handleMessageUpdate('I apologize, but I encountered an error. Please try again later.');
-      } finally {
-        setIsLoading(false);
-      }
-    }
-  };
 
   return (
     <div className="min-h-screen h-screen bg-[#f5f5f5] flex overflow-hidden">
@@ -198,27 +212,23 @@ function App() {
                     className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
                   >
                     <div
-                      className={`max-w-[80%] p-3 rounded-lg ${
+                      className={`max-w-[80%] p-3 rounded-lg whitespace-pre-wrap ${
                         message.type === 'user'
                           ? 'bg-[#C6007E] text-white'
                           : 'bg-[#E5F0F8] text-gray-800'
                       }`}
                     >
-                      {message.content}
+                      {formatMessageContent(message.content)}
+                      {message.type === 'ai' && message.content === '' && (
+                        <div className="flex items-center space-x-2">
+                          <Loader2 className="h-4 w-4 animate-spin text-[#1C6280]" />
+                          <span>Retrieving...</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
-                {isLoading && (
-                  <div className="flex justify-start">
-                    <div className="max-w-[80%] p-3 rounded-lg bg-[#E5F0F8] text-gray-800">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                        <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                        <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                      </div>
-                    </div>
-                  </div>
-                )}
+                <div ref={messagesEndRef} />
               </div>
             </ScrollArea>
 
@@ -229,16 +239,20 @@ function App() {
                   placeholder="Type your message..."
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && handleSend()}
+                  onKeyPress={(e) => e.key === 'Enter' && !isLoading && handleSend()}
                   className="flex-1"
                   disabled={isLoading}
                 />
                 <Button 
-                  onClick={handleSend} 
+                  onClick={() => handleSend()}
                   className="bg-[#C6007E] hover:bg-[#a30068]"
                   disabled={isLoading}
                 >
-                  <Send className="h-5 w-5" />
+                  {isLoading ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <Send className="h-5 w-5" />
+                  )}
                 </Button>
               </div>
             </div>
@@ -254,7 +268,7 @@ function App() {
                     key={index}
                     variant="ghost"
                     className="w-full justify-start text-left h-auto normal-case font-normal hover:bg-[#E5F0F8] text-gray-700 px-3 py-2"
-                    onClick={() => setInput(question.text)}
+                    onClick={() => handleCommonQuestionClick(question.text)}
                     disabled={isLoading}
                   >
                     {question.icon}
@@ -295,10 +309,7 @@ function App() {
                     key={index}
                     variant="ghost"
                     className="w-full justify-start text-left h-auto normal-case font-normal hover:bg-[#E5F0F8] text-gray-700 px-3 py-2"
-                    onClick={() => {
-                      setInput(question.text);
-                      setHelpPanelOpen(false);
-                    }}
+                    onClick={() => handleCommonQuestionClick(question.text)}
                     disabled={isLoading}
                   >
                     {question.icon}

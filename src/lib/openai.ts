@@ -5,7 +5,7 @@ let openai: OpenAI | null = null;
 let isConfigValid = false;
 
 try {
-  if (config.openai.apiKey?.startsWith('sk-') && config.openai.assistantId) {
+  if (config.openai.apiKey?.startsWith('sk-')) {
     openai = new OpenAI({
       apiKey: config.openai.apiKey,
       dangerouslyAllowBrowser: true
@@ -18,77 +18,62 @@ try {
 
 export async function* streamMessage(message: string) {
   if (!isConfigValid || !openai) {
-    throw new Error('OpenAI is not properly configured. Please check your API key and Assistant ID.');
+    throw new Error('OpenAI is not properly configured. Please check your API key.');
+  }
+
+  if (!config.openai.assistantId) {
+    throw new Error('Assistant ID is not configured.');
   }
 
   try {
+    // Create a thread
     const thread = await openai.beta.threads.create();
-    
+
+    // Add the user's message to the thread
     await openai.beta.threads.messages.create(thread.id, {
-      role: "user",
+      role: 'user',
       content: message
     });
 
+    // Run the assistant
     const run = await openai.beta.threads.runs.create(thread.id, {
-      assistant_id: config.openai.assistantId as string
+      assistant_id: config.openai.assistantId
     });
 
-    let attempts = 0;
-    const maxAttempts = 60;
-    let lastResponse = '';
-
-    while (attempts < maxAttempts) {
-      try {
-        const runStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
-        
-        if (runStatus.status === 'completed') {
-          const messages = await openai.beta.threads.messages.list(thread.id, {
-            limit: 1,
-            order: 'desc'
-          });
-          
-          if (messages.data.length > 0 && messages.data[0].content.length > 0) {
-            const content = messages.data[0].content[0];
-            if ('text' in content && content.text.value !== lastResponse) {
-              lastResponse = content.text.value;
-              yield lastResponse;
-            }
-          }
-          break;
-        } 
-        
-        if (['failed', 'cancelled', 'expired'].includes(runStatus.status)) {
-          throw new Error(`Chat failed: ${runStatus.status}`);
-        }
-        
-        if (runStatus.status === 'in_progress') {
-          const messages = await openai.beta.threads.messages.list(thread.id, {
-            limit: 1,
-            order: 'desc'
-          });
-          
-          if (messages.data.length > 0 && messages.data[0].content.length > 0) {
-            const content = messages.data[0].content[0];
-            if ('text' in content && content.text.value !== lastResponse) {
-              lastResponse = content.text.value;
-              yield lastResponse;
-            }
-          }
-        }
-        
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        attempts++;
-      } catch (error) {
-        console.error('Error during message streaming:', error instanceof Error ? error.message : 'Unknown error');
-        throw error;
+    let status = await openai.beta.threads.runs.retrieve(thread.id, run.id);
+    
+    while (status.status !== 'completed' && status.status !== 'failed') {
+      // Reduce polling interval to 200ms
+      await new Promise(resolve => setTimeout(resolve, 200));
+      status = await openai.beta.threads.runs.retrieve(thread.id, run.id);
+      
+      if (status.status === 'failed') {
+        throw new Error('Assistant run failed');
       }
     }
 
-    if (attempts >= maxAttempts) {
-      throw new Error('Request timed out after 60 seconds');
+    // Get the messages, focusing on the latest assistant response
+    const messages = await openai.beta.threads.messages.list(thread.id);
+    const assistantMessage = messages.data.find(msg => msg.role === 'assistant');
+
+    if (!assistantMessage || !assistantMessage.content[0]?.text?.value) {
+      throw new Error('No response received from assistant');
+    }
+
+    // Stream the response in larger chunks for better performance
+    const response = assistantMessage.content[0].text.value;
+    const chunkSize = 25; // Stream 25 characters at a time
+    let streamedResponse = '';
+    
+    for (let i = 0; i < response.length; i += chunkSize) {
+      const chunk = response.slice(i, i + chunkSize);
+      streamedResponse += chunk;
+      yield streamedResponse;
+      // Updated delay to 10ms between chunks
+      await new Promise(resolve => setTimeout(resolve, 10));
     }
   } catch (error) {
-    console.error('OpenAI chat error:', error instanceof Error ? error.message : 'Unknown error');
+    console.error('Error in streamMessage:', error);
     throw error;
   }
 }
